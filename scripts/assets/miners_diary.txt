@@ -1,0 +1,1 @@
+I buried my treasure before the creeper exploded. The code is: MinecraftCTF{tar_archaeologist}

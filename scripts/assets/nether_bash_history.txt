@@ -1,0 +1,6 @@
+cd /home/nether_traveler/nether
+ls -la
+echo "I nearly dropped my loot in the lava!"
+echo "I'd better hide my emergency stash code: MinecraftCTF{history_never_forgets}" > secret_stash.txt
+rm secret_stash.txt
+exit

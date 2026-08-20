@@ -1,0 +1,11 @@
+[Unit]
+Description=Minecraft CTF Enderman Spawner
+After=network.target
+
+[Service]
+ExecStart=/opt/minecraft_ctf_sys/spawner.sh
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
