@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# There was no error handling anywhere in here before, so if a step partway
+# through failed (no network for the apt-get install below, for example)
+# it would just carry on through the rest of the setup regardless and
+# still print "installation completed successfully" at the very end,
+# leaving a half-built game with no clue what actually went wrong.
+# `set -euo pipefail` makes it stop immediately and loudly on the first
+# real failure instead.
+set -euo pipefail
+
 if [ "$EUID" -ne 0 ]; then
   echo "Error: Installer requires root privileges. (sudo bash $0)"
   exit 1
@@ -7,12 +16,27 @@ fi
 
 REPO_DIR=$(pwd)
 
-if [ -n "$SUDO_USER" ]; then
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     PLAYER_USER="$SUDO_USER"
     PLAYER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 else
-    PLAYER_USER="root"
-    PLAYER_HOME="/root"
+    # This used to just let anyone with no SUDO_USER set (or a SUDO_USER
+    # of "root" itself, e.g. someone who ran `su -` before invoking the
+    # script) become the "root" player:
+    #   PLAYER_USER="root"
+    #   PLAYER_HOME="/root"
+    # That's not harmless — this whole game is a series of Linux
+    # permission puzzles (locked-down directories, files only another
+    # account can read, etc), and root can read and write straight through
+    # every single one of them. Someone who spins up a fresh VM per the
+    # README and just works as root the whole time (a very common way
+    # people actually use disposable VMs) would silently skip every
+    # puzzle instead of solving it. Refuse to start instead of quietly
+    # running the whole game as root.
+    echo "Error: run this with 'sudo' from a normal (non-root) user account, not while logged in as root." >&2
+    echo "  e.g.: adduser player && usermod -aG sudo player && su - player" >&2
+    echo "        sudo bash $0" >&2
+    exit 1
 fi
 
 GAME_DIR="$PLAYER_HOME/minecraft_ctf"
@@ -27,7 +51,13 @@ echo "[SERVER] World generation complete. Type 'tail -f $CHAT_LOG' in a second t
 
 for user in nether_traveler ender_traveler; do
     if id "$user" &>/dev/null; then
-        rm -rf /home/$user/*
+        # This only cleared the visible files on a reinstall:
+        #   rm -rf /home/$user/*
+        # A bare `*` glob doesn't match dotfiles, so anything hidden left
+        # over from a previous run (.bash_history, .lesshst, whatever a
+        # player leaves behind) survives a "fresh" reinstall instead of the
+        # game actually resetting.
+        find "/home/$user" -mindepth 1 -exec rm -rf {} +
     else
         useradd -m -s /bin/bash $user
     fi
@@ -47,8 +77,31 @@ if [ ! -f "/etc/ssh/sshd_config" ]; then
     apt-get install -y openssh-server
 fi
 
-sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+# These two lines flipped PasswordAuthentication to "yes" for the ENTIRE
+# sshd, for every account on the box, not just the two throwaway CTF
+# accounts:
+#   sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+#   sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+# Two problems with that: (1) it weakens SSH login for the real
+# machine/VM account too, not just the game NPC accounts, and (2) modern
+# Debian ships "Include /etc/ssh/sshd_config.d/*.conf" near the TOP of
+# sshd_config, and sshd uses the FIRST value it finds for a setting — so
+# if a distro or cloud-image drop-in in that directory already says
+# "PasswordAuthentication no", it wins over our edit further down the
+# file and password login silently never actually works. A `Match User`
+# block scopes the setting to just our two accounts, and because Match
+# blocks are evaluated as their own separate context, they reliably
+# override for those users regardless of what conf.d says.
+SSHD_MARKER_BEGIN="# BEGIN minecraft-ctf sshd override"
+SSHD_MARKER_END="# END minecraft-ctf sshd override"
+if ! grep -qF "$SSHD_MARKER_BEGIN" /etc/ssh/sshd_config; then
+    {
+        echo "$SSHD_MARKER_BEGIN"
+        echo "Match User nether_traveler,ender_traveler"
+        echo "    PasswordAuthentication yes"
+        echo "$SSHD_MARKER_END"
+    } >> /etc/ssh/sshd_config
+fi
 systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
 
 #  END DIMENSION 
@@ -134,7 +187,18 @@ chmod +x "$SYS_DIR/spawner.sh"
 cp "$REPO_DIR/systemd/ctf-game-master.service" /etc/systemd/system/
 cp "$REPO_DIR/systemd/ctf-spawner.service" /etc/systemd/system/
 
-sed -i "s|/root/minecraft_ctf root|$GAME_DIR $PLAYER_USER|g" /etc/systemd/system/ctf-game-master.service
+# This matched the ENTIRE literal default line to substitute in the real
+# paths:
+#   sed -i "s|/root/minecraft_ctf root|$GAME_DIR $PLAYER_USER|g" /etc/systemd/system/ctf-game-master.service
+# That only works because the checked-in .service file happens to say
+# exactly "/root/minecraft_ctf root" right now — rename a variable,
+# reflow that line, or add a comment above it later, and this silently
+# stops matching, so the installed service keeps pointing at
+# /root/minecraft_ctf and runs the wrong game world with no error
+# anywhere to tell you. Dedicated placeholder tokens in the template
+# aren't tied to the file's current wording, so they can't go stale like
+# that.
+sed -i "s|__GAME_DIR__|$GAME_DIR|g; s|__PLAYER__|$PLAYER_USER|g" /etc/systemd/system/ctf-game-master.service
 
 systemctl daemon-reload
 systemctl enable ctf-game-master.service
