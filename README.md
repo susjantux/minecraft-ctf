@@ -24,3 +24,38 @@ First, download the repository:
 ```bash
 git clone [https://github.com/susjantux/minecraft-ctf.git](https://github.com/susjantux/minecraft-ctf.git)
 cd minecraft-ctf
+Option 1: Docker (Highly Recommended)
+Run the CTF in a completely isolated environment without altering your host system.
+
+Build and start the container in the background:
+
+Bash
+docker compose up -d --build
+Connect to the game via SSH (password is hidden in the game!):
+
+Bash
+ssh nether_traveler@localhost -p 2222
+Option 2: Bare Metal
+Warning: This will create users and modify systemd services directly on your host machine.
+
+Run the installer script:
+
+Bash
+sudo bash minecraft_ctf.sh
+Open a second terminal to monitor the server logs:
+
+Bash
+tail -f /var/log/minecraft_server.log
+Teardown
+If you used the Docker method, simply run:
+
+Bash
+docker compose down
+To safely remove all generated dimensions, systemd services, and users from a bare-metal installation, run the cleanup script:
+
+Bash
+sudo bash cleanup.sh
+Contributing
+Feel free to open an issue or submit a PR if you want to add improvements or fix a bug (though I tested this meticulously for ages, so I'm like 99.9% sure it's flawless... but you never know).
+
+made with programmer socks btw
