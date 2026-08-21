@@ -1,0 +1,7 @@
+services:
+  minecraft-ctf:
+    build: .
+    container_name: minecraft-ctf-env
+    ports:
+      - "2222:22"
+    restart: unless-stopped
