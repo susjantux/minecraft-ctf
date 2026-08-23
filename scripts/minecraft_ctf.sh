@@ -14,6 +14,16 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Rilevamento automatico del Package Manager (APT vs Pacman)
+if command -v apt-get &> /dev/null; then
+    PKG_MANAGER="apt"
+elif command -v pacman &> /dev/null; then
+    PKG_MANAGER="pacman"
+else
+    echo "Error: Nessun package manager supportato (apt o pacman) trovato."
+    exit 1
+fi
+
 REPO_DIR=$(pwd)
 
 if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
@@ -43,11 +53,30 @@ GAME_DIR="$PLAYER_HOME/minecraft_ctf"
 SYS_DIR="/opt/minecraft_ctf_sys"
 CHAT_LOG="/var/log/minecraft_server.log"
 
-echo " ⋅˚₊‧   Initializing minecraft CTF environment   ‧₊˚ ⋅ "
+echo " ⋅˚₊‧    Initializing minecraft CTF environment    ‧₊˚ ⋅ "
 
 touch "$CHAT_LOG"
 chmod 644 "$CHAT_LOG"
 echo "[SERVER] World generation complete. Type 'tail -f $CHAT_LOG' in a second terminal to monitor server events." > "$CHAT_LOG"
+
+# Installazione dipendenze di sistema cross-distro (SSH + Cron)
+echo "[*] Checking system dependencies (SSH & Cron)..."
+if [ "$PKG_MANAGER" = "apt" ]; then
+    apt-get update -qq
+    apt-get install -y openssh-server cron
+    systemctl enable --now cron 2>/dev/null || true
+elif [ "$PKG_MANAGER" = "pacman" ]; then
+    pacman -Sy --noconfirm --quiet
+    pacman -S --noconfirm openssh cronie
+    systemctl enable --now cronie 2>/dev/null || true
+fi
+
+# Configurazione SSH
+if [ -f "/etc/ssh/sshd_config" ]; then
+    sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+fi
 
 for user in nether_traveler ender_traveler; do
     if id "$user" &>/dev/null; then
@@ -62,6 +91,10 @@ for user in nether_traveler ender_traveler; do
         useradd -m -s /bin/bash $user
     fi
     chmod 755 /home/$user
+
+    # Fix compatibilità .cache per crontab (indispensabile per cronie su Arch)
+    mkdir -p /home/$user/.cache/crontab
+    chown -R $user:$user /home/$user/.cache
 done
 
 PASS_NETHER=$(openssl passwd -6 $(echo "TWluZWNyYWZ0Q1RGe3BvcnRhbF9pZ25pdGVkfQ==" | base64 -d))
@@ -72,11 +105,17 @@ usermod --password "$PASS_ENDER" ender_traveler
 
 echo "[*] Checking SSH server dependencies..."
 if [ ! -f "/etc/ssh/sshd_config" ]; then
-    echo "[*] OpenSSH Server is missing. Installing automatically..."
-    apt-get update -qq
-    apt-get install -y openssh-server
-fi
-
+        echo "[*] OpenSSH Server is missing. Installing automatically..."
+        if command -v apt-get >/dev/null 2>&1; then
+            apt-get update -qq
+            apt-get install -y openssh-server
+        elif command -v pacman >/dev/null 2>&1; then
+            pacman -Sy --noconfirm openssh
+        else
+            echo "[-] Error: Unsupported package manager. Please install OpenSSH manually."
+            exit 1
+        fi
+    fi
 # These two lines flipped PasswordAuthentication to "yes" for the ENTIRE
 # sshd, for every account on the box, not just the two throwaway CTF
 # accounts:
@@ -110,7 +149,7 @@ sudo -u ender_traveler touch /home/ender_traveler/the_end/ender_dragon/dragon_he
 cp "$REPO_DIR/assets/hint.txt" /home/ender_traveler/the_end/hint.txt
 chown -R ender_traveler:ender_traveler /home/ender_traveler/the_end
 
-# NETHER DIMENSION 
+# NETHER DIMENSION
 NETHER_HOME="/home/nether_traveler/nether"
 sudo -u nether_traveler mkdir -p "$NETHER_HOME/wither_fortress"
 chmod 000 "$NETHER_HOME/wither_fortress"
@@ -123,7 +162,7 @@ cp "$REPO_DIR/assets/nether_bash_history.txt" /home/nether_traveler/.bash_histor
 chown nether_traveler:nether_traveler /home/nether_traveler/.bash_history
 chown -R nether_traveler:nether_traveler "$NETHER_HOME"
 
-#  OVERWORLD 
+#  OVERWORLD
 rm -rf "$GAME_DIR"
 mkdir -p "$GAME_DIR"
 
@@ -165,7 +204,7 @@ cp "$REPO_DIR/src/book_of_wisdom.py" "$GAME_DIR/.lost_library/secret_room/book_o
 cp "$REPO_DIR/assets/intro.txt" "$GAME_DIR/intro.txt"
 cp "$REPO_DIR/assets/coal.txt" "$REAL_MINE/coal.txt"
 
-#  PERMISSIONS 
+#  PERMISSIONS
 chown -R "$PLAYER_USER:$PLAYER_USER" "$GAME_DIR"
 chmod 755 "$PLAYER_HOME"
 chmod -R 755 "$GAME_DIR"
@@ -173,7 +212,7 @@ find "$GAME_DIR" -type d -exec chmod 755 {} \;
 find "$GAME_DIR" -type f -exec chmod 644 {} \;
 chmod +x "$GAME_DIR/.lost_library/secret_room/book_of_wisdom.py"
 
-#  DAEMONS & SYSTEMD 
+#  DAEMONS & SYSTEMD
 mkdir -p "$SYS_DIR"
 chmod 700 "$SYS_DIR"
 
@@ -206,7 +245,7 @@ systemctl enable ctf-spawner.service
 systemctl restart ctf-game-master.service
 systemctl restart ctf-spawner.service
 
-echo "  ⋅˚₊‧   CTF installation completed successfully   ‧₊˚ ⋅  "
+echo "  ⋅˚₊‧    CTF installation completed successfully    ‧₊˚ ⋅ "
 echo "[OK] Game daemons are running securely via systemd."
 echo "[OK] End Dimension link enabled via SSH (port 22)."
 echo "[OK] Starting point: $GAME_DIR"
