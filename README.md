@@ -41,7 +41,7 @@ Run the CTF in a completely isolated environment without altering your host syst
 
     ```bash
     docker exec -it minecraft-ctf-env /bin/bash
-    cd /root/minecraft_ctf
+    cd /opt/minecraft_ctf
     ```
 
 3. To connect to the Nether / advanced dimensions via SSH:
