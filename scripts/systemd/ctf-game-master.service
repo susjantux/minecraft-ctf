@@ -3,7 +3,7 @@ Description=Minecraft CTF Game Master
 After=network.target
 
 [Service]
-ExecStart=/opt/minecraft_ctf_sys/game_master.sh /root/minecraft_ctf root
+ExecStart=/opt/minecraft_ctf_sys/game_master.sh __GAME_DIR__ __PLAYER__
 Restart=always
 User=root
 
