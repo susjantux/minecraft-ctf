@@ -6,7 +6,7 @@ I created this CTF to help people learn Linux command-line and sysadmin skills i
 
 **Run this in a Docker container or a virtual machine.** While a `cleanup.sh` script is provided for bare-metal installs, using the provided Docker environment is highly recommended to avoid modifying your host system.
 
-- **Note 1:** Developed and tested on Debian/Ubuntu and Arch Linux.
+- **Note 1:** Developed and tested on Debian/Ubuntu and Arch Linux/Garuda.
 - **Note 2:** Copy-pasting wrapped commands from PDF grabs the newline and breaks execution. Paste as one single line.
 
 ## Features
@@ -37,11 +37,20 @@ Run the CTF in a completely isolated environment without altering your host syst
     docker compose up -d --build
     ```
 
-2. Connect to the game via SSH (password is hidden in the game!):
+2. To play from the absolute beginning (Overworld): access the container shell directly as root:
+
+    ```bash
+    docker exec -it minecraft-ctf-env /bin/bash
+    cd /opt/minecraft_ctf
+    ```
+
+3. To connect to the Nether / advanced dimensions via SSH:
 
     ```bash
     ssh nether_traveler@localhost -p 2222
     ```
+
+    (Password is hidden inside the game!)
 
 ### Option 2: Bare Metal
 
